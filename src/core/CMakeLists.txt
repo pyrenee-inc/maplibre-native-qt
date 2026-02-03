@@ -14,6 +14,9 @@ add_subdirectory(
     EXCLUDE_FROM_ALL
 )
 
+# Disable SymbolInstance sentinel checks in release builds
+target_compile_definitions(mbgl-core PUBLIC MLN_SYMBOL_GUARDS=0)
+
 # Public headers
 string(TOLOWER ${MLN_QT_NAME} MLN_QT_NAME_LOWERCASE)
 set(MLNQtCore_Headers
