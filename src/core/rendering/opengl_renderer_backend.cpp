@@ -77,7 +77,7 @@ void OpenGLRendererBackend::deactivate() {
 
 void OpenGLRendererBackend::updateAssumedState() {
     assumeFramebufferBinding(ImplicitFramebufferBinding);
-    assumeViewport(1, 1, size); // Use 1,1 to avoid zero-size viewport issues
+    setViewport(0, 0, size);
 }
 
 void OpenGLRendererBackend::restoreFramebufferBinding() {

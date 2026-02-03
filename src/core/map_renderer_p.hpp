@@ -9,8 +9,11 @@
 
 #include "rendering/renderer_backend_p.hpp" // provides RendererBackend alias
 
+#include <mbgl/renderer/query.hpp>
 #include <mbgl/renderer/renderer.hpp>
 #include <mbgl/renderer/renderer_observer.hpp>
+#include <mbgl/util/feature.hpp>
+#include <mbgl/util/geo.hpp>
 #include <mbgl/util/util.hpp>
 
 #include <QtCore/QObject>
@@ -54,6 +57,12 @@ public:
     void render();
     void updateRenderer(const mbgl::Size &size, qreal pixelRatio, quint32 fbo = 0);
     void setObserver(mbgl::RendererObserver *observer);
+
+    // Feature queries – must be called on the render thread after render().
+    [[nodiscard]] std::vector<mbgl::Feature> queryRenderedFeatures(
+        const mbgl::ScreenCoordinate &point, const mbgl::RenderedQueryOptions &options = {}) const;
+    [[nodiscard]] std::vector<mbgl::Feature> queryRenderedFeatures(
+        const mbgl::ScreenBox &box, const mbgl::RenderedQueryOptions &options = {}) const;
 
     // Thread-safe, called by the Frontend
     void updateParameters(std::shared_ptr<mbgl::UpdateParameters> parameters);

@@ -23,6 +23,7 @@
 #include <mbgl/map/map_options.hpp>
 #include <mbgl/math/log2.hpp>
 #include <mbgl/math/minmax.hpp>
+#include <mbgl/renderer/query.hpp>
 #include <mbgl/renderer/renderer.hpp>
 #include <mbgl/storage/file_source_manager.hpp>
 #include <mbgl/storage/network_status.hpp>
@@ -50,6 +51,7 @@
 #include <mbgl/style/transition_options.hpp>
 #include <mbgl/util/color.hpp>
 #include <mbgl/util/constants.hpp>
+#include <mbgl/util/feature.hpp>
 #include <mbgl/util/geo.hpp>
 #include <mbgl/util/geometry.hpp>
 #include <mbgl/util/image.hpp>
@@ -1491,6 +1493,184 @@ QVariant Map::getFilter(const QString &layerId) const {
     return variantFromValue(serialized);
 }
 
+// --- queryRenderedFeatures helpers ---
+
+namespace {
+
+QVariant featurePropertyToVariant(const mapbox::feature::value &val) {
+    return val.match(
+        [](mapbox::feature::null_value_t) -> QVariant { return {}; },
+        [](bool v) -> QVariant { return v; },
+        [](uint64_t v) -> QVariant { return static_cast<qulonglong>(v); },
+        [](int64_t v) -> QVariant { return static_cast<qlonglong>(v); },
+        [](double v) -> QVariant { return v; },
+        [](const std::string &v) -> QVariant { return QString::fromStdString(v); },
+        [](const mapbox::feature::value::array_type &arr) -> QVariant {
+            QVariantList list;
+            list.reserve(static_cast<int>(arr.size()));
+            for (const auto &item : arr) {
+                list.append(featurePropertyToVariant(item));
+            }
+            return list;
+        },
+        [](const mapbox::feature::value::object_type &obj) -> QVariant {
+            QVariantMap map;
+            for (const auto &kv : obj) {
+                map.insert(QString::fromStdString(kv.first), featurePropertyToVariant(kv.second));
+            }
+            return map;
+        });
+}
+
+QVariant featureIdToVariant(const mapbox::feature::identifier &id) {
+    return id.match([](mapbox::feature::null_value_t) -> QVariant { return {}; },
+                    [](uint64_t v) -> QVariant { return static_cast<qulonglong>(v); },
+                    [](int64_t v) -> QVariant { return static_cast<qlonglong>(v); },
+                    [](double v) -> QVariant { return v; },
+                    [](const std::string &v) -> QVariant { return QString::fromStdString(v); });
+}
+
+template <typename T>
+QVariantList pointToList(const mapbox::geometry::point<T> &pt) {
+    return {pt.x, pt.y};
+}
+
+template <typename T>
+QVariantList ringToList(const std::vector<mapbox::geometry::point<T>> &ring) {
+    QVariantList list;
+    list.reserve(static_cast<int>(ring.size()));
+    for (const auto &pt : ring) {
+        list.append(QVariant(pointToList(pt)));
+    }
+    return list;
+}
+
+QVariantMap geometryToVariant(const mapbox::geometry::geometry<double> &geom) {
+    QVariantMap result;
+
+    geom.match(
+        [&](const mapbox::geometry::empty &) { result["type"] = "Empty"; },
+        [&](const mapbox::geometry::point<double> &pt) {
+            result["type"] = "Point";
+            result["coordinates"] = QVariant(pointToList(pt));
+        },
+        [&](const mapbox::geometry::line_string<double> &ls) {
+            result["type"] = "LineString";
+            result["coordinates"] = QVariant(ringToList(ls));
+        },
+        [&](const mapbox::geometry::polygon<double> &poly) {
+            result["type"] = "Polygon";
+            QVariantList rings;
+            rings.reserve(static_cast<int>(poly.size()));
+            for (const auto &ring : poly) {
+                rings.append(QVariant(ringToList(ring)));
+            }
+            result["coordinates"] = rings;
+        },
+        [&](const mapbox::geometry::multi_point<double> &mp) {
+            result["type"] = "MultiPoint";
+            result["coordinates"] = QVariant(ringToList(mp));
+        },
+        [&](const mapbox::geometry::multi_line_string<double> &mls) {
+            result["type"] = "MultiLineString";
+            QVariantList lines;
+            lines.reserve(static_cast<int>(mls.size()));
+            for (const auto &ls : mls) {
+                lines.append(QVariant(ringToList(ls)));
+            }
+            result["coordinates"] = lines;
+        },
+        [&](const mapbox::geometry::multi_polygon<double> &mpoly) {
+            result["type"] = "MultiPolygon";
+            QVariantList polys;
+            polys.reserve(static_cast<int>(mpoly.size()));
+            for (const auto &poly : mpoly) {
+                QVariantList rings;
+                rings.reserve(static_cast<int>(poly.size()));
+                for (const auto &ring : poly) {
+                    rings.append(QVariant(ringToList(ring)));
+                }
+                polys.append(QVariant(rings));
+            }
+            result["coordinates"] = polys;
+        },
+        [&](const mapbox::geometry::geometry_collection<double> &) {
+            result["type"] = "GeometryCollection";
+        });
+
+    return result;
+}
+
+QVariantMap featureToVariantMap(const mbgl::Feature &feature) {
+    QVariantMap result;
+
+    // Geometry
+    result["geometry"] = geometryToVariant(feature.geometry);
+
+    // Properties
+    QVariantMap props;
+    for (const auto &kv : feature.properties) {
+        props.insert(QString::fromStdString(kv.first), featurePropertyToVariant(kv.second));
+    }
+    result["properties"] = props;
+
+    // ID
+    QVariant id = featureIdToVariant(feature.id);
+    if (id.isValid()) {
+        result["id"] = id;
+    }
+
+    // Source info
+    if (!feature.source.empty()) {
+        result["source"] = QString::fromStdString(feature.source);
+    }
+    if (!feature.sourceLayer.empty()) {
+        result["sourceLayer"] = QString::fromStdString(feature.sourceLayer);
+    }
+
+    return result;
+}
+
+mbgl::RenderedQueryOptions queryOptionsFromLayerIds(const QStringList &layerIds) {
+    mbgl::RenderedQueryOptions options;
+    if (!layerIds.isEmpty()) {
+        std::vector<std::string> ids;
+        ids.reserve(layerIds.size());
+        for (const auto &id : layerIds) {
+            ids.push_back(id.toStdString());
+        }
+        options.layerIDs = std::move(ids);
+    }
+    return options;
+}
+
+QVariantList featuresToVariantList(const std::vector<mbgl::Feature> &features) {
+    QVariantList result;
+    result.reserve(static_cast<int>(features.size()));
+    for (const auto &feature : features) {
+        result.append(featureToVariantMap(feature));
+    }
+    return result;
+}
+
+} // namespace
+
+QVariantList Map::queryRenderedFeatures(const QPointF &point, const QStringList &layerIds) {
+    const auto options = queryOptionsFromLayerIds(layerIds);
+    const mbgl::ScreenCoordinate sc{point.x(), point.y()};
+    auto features = d_ptr->queryRenderedFeatures(sc, options);
+    return featuresToVariantList(features);
+}
+
+QVariantList Map::queryRenderedFeatures(const QRectF &rect, const QStringList &layerIds) {
+    const auto options = queryOptionsFromLayerIds(layerIds);
+    const mbgl::ScreenBox box{
+        {rect.topLeft().x(), rect.topLeft().y()},
+        {rect.bottomRight().x(), rect.bottomRight().y()}};
+    auto features = d_ptr->queryRenderedFeatures(box, options);
+    return featuresToVariantList(features);
+}
+
 /*!
     \brief Create the renderer.
     \param nativeTargetPtr The pointer to the native layer/window/surface.
@@ -1973,6 +2153,24 @@ unsigned int MapPrivate::getFramebufferTextureId() const {
     return m_mapRenderer ? m_mapRenderer->getFramebufferTextureId() : 0;
 }
 #endif
+
+std::vector<mbgl::Feature> MapPrivate::queryRenderedFeatures(const mbgl::ScreenCoordinate &point,
+                                                              const mbgl::RenderedQueryOptions &options) const {
+    const std::scoped_lock lock(m_mapRendererMutex);
+    if (!m_mapRenderer) {
+        return {};
+    }
+    return m_mapRenderer->queryRenderedFeatures(point, options);
+}
+
+std::vector<mbgl::Feature> MapPrivate::queryRenderedFeatures(const mbgl::ScreenBox &box,
+                                                              const mbgl::RenderedQueryOptions &options) const {
+    const std::scoped_lock lock(m_mapRendererMutex);
+    if (!m_mapRenderer) {
+        return {};
+    }
+    return m_mapRenderer->queryRenderedFeatures(box, options);
+}
 
 /*! \endcond */
 

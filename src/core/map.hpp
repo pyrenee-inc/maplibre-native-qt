@@ -175,6 +175,12 @@ public:
 
     void setFilter(const QString &layerId, const QVariant &filter);
     [[nodiscard]] QVariant getFilter(const QString &layerId) const;
+
+    [[nodiscard]] QVariantList queryRenderedFeatures(const QPointF &point,
+                                                      const QStringList &layerIds = {});
+    [[nodiscard]] QVariantList queryRenderedFeatures(const QRectF &rect,
+                                                      const QStringList &layerIds = {});
+
     // When rendering on a different thread,
     // should be called on the render thread.
     void createRenderer(void *nativeTargetPtr);

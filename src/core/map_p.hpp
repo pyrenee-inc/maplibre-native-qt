@@ -15,6 +15,7 @@
 #include <mbgl/map/map.hpp>
 #include <mbgl/renderer/renderer_frontend.hpp>
 #include <mbgl/storage/resource_transform.hpp>
+#include <mbgl/util/feature.hpp>
 #include <mbgl/util/geo.hpp>
 
 #include <QtCore/QObject>
@@ -77,6 +78,12 @@ public:
     // Helper method to get the OpenGL framebuffer texture ID for direct texture sharing
     unsigned int getFramebufferTextureId() const;
 #endif
+
+    // Feature queries – delegates to MapRenderer under mutex.
+    std::vector<mbgl::Feature> queryRenderedFeatures(const mbgl::ScreenCoordinate &point,
+                                                      const mbgl::RenderedQueryOptions &options) const;
+    std::vector<mbgl::Feature> queryRenderedFeatures(const mbgl::ScreenBox &box,
+                                                      const mbgl::RenderedQueryOptions &options) const;
 
 public slots:
     void requestRendering();
