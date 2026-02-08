@@ -27,15 +27,19 @@ public:
         backend.restoreFramebufferBinding();
         backend.setViewport(0, 0, backend.getSize());
 
-        // Clear to prevent artifacts - scissor disable needed to ensure full clear
+        // Clear to prevent artifacts.
+        // In SharedGLContext mode, the render pass does NOT clear the color buffer
+        // (clearColor is nullopt). We must clear here instead.
+        // Reset scissor test, color/depth/stencil masks to ensure the clear
+        // actually writes to all buffers — previous rendering may have disabled them.
         const QOpenGLContext *glContext = QOpenGLContext::currentContext();
         if (glContext != nullptr) {
             QOpenGLFunctions *gl = glContext->functions();
 
-            // Disable scissor test to ensure full framebuffer is cleared
             gl->glDisable(GL_SCISSOR_TEST);
-
-            // Clear the framebuffer
+            gl->glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            gl->glDepthMask(GL_TRUE);
+            gl->glStencilMask(0xFF);
             gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             gl->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
         }
