@@ -13,6 +13,7 @@
 
 #include <QtCore/QVariant>
 #include <QtGui/QColor>
+#include <QtQml/QJSValue>
 
 #include <optional>
 
@@ -41,6 +42,20 @@ public:
     static QVariant arrayMember(const QVariant &value, std::size_t i) { return value.toList()[static_cast<int>(i)]; }
 
     static bool isObject(const QVariant &value) {
+        // Arrays must never be treated as objects.
+        // In Qt 6, canConvert(QVariantList → QVariantMap) returns true,
+        // causing arrays like [0, -33.5] to enter the "function" conversion
+        // path (expecting {"stops": [...]}) instead of the array/literal path.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        if (value.metaType() == QMetaType(QMetaType::QVariantList)) return false;
+        // QML passes JS arrays as QJSValue, not QVariantList.
+        if (value.canConvert<QJSValue>()) {
+            const auto jsv = value.value<QJSValue>();
+            if (jsv.isArray()) return false;
+        }
+#else
+        if (value.type() == QVariant::List) return false;
+#endif
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         return QMetaType::canConvert(value.metaType(), QMetaType(QMetaType::QVariantMap)) ||
                value.typeId() == QMetaType::QByteArray
