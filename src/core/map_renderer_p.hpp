@@ -57,6 +57,7 @@ public:
     void render();
     void updateRenderer(const mbgl::Size &size, qreal pixelRatio, quint32 fbo = 0);
     void setObserver(mbgl::RendererObserver *observer);
+    void clearData();
 
     // Feature queries – must be called on the render thread after render().
     [[nodiscard]] std::vector<mbgl::Feature> queryRenderedFeatures(

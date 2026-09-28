@@ -193,6 +193,7 @@ public:
 #endif
     void updateRenderer(const QSize &size, qreal pixelRatio, quint32 fbo = 0);
     void destroyRenderer();
+    void clearRendererData();
 
     void setCurrentDrawable(void *texturePtr);
     void setExternalDrawable(void *texturePtr, const QSize &textureSize);

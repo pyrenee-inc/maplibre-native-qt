@@ -49,6 +49,7 @@ public:
 #endif
     void updateRenderer(const QSize &size, qreal pixelRatio, quint32 fbo = 0);
     void destroyRenderer();
+    void clearRendererData();
     void render();
 
     using PropertySetter = std::optional<mbgl::style::conversion::Error> (mbgl::style::Layer::*)(
