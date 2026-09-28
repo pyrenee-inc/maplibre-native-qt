@@ -167,6 +167,11 @@ void MapRenderer::render() {
     }
 }
 
+void MapRenderer::clearData() {
+    MBGL_VERIFY_THREAD(tid);
+    m_renderer->clearData();
+}
+
 void MapRenderer::setObserver(mbgl::RendererObserver *observer) {
     m_renderer->setObserver(observer);
 }

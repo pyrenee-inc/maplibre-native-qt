@@ -1775,6 +1775,19 @@ void Map::updateRenderer(const QSize &size, qreal pixelRatio, quint32 fbo) {
 }
 
 /*!
+    \brief Discard renderer data and request a new frame.
+
+    Clears renderer-side sources, tiles, layers and images before the next
+    render, allowing them to be rebuilt from the current style. The style,
+    camera and persistent resource cache are preserved.
+
+    Must be called on the render thread.
+*/
+void Map::clearRendererData() {
+    d_ptr->clearRendererData();
+}
+
+/*!
     \brief Set connection established.
 
     Informs the map that the network connection has been established, causing
@@ -2071,6 +2084,15 @@ void MapPrivate::updateRenderer(const QSize &size, qreal pixelRatio, quint32 fbo
 
     // Need to add pixel ratio to the size, as the renderer expects the full size
     m_mapRenderer->updateRenderer(sanitizeSize(size), pixelRatio, fbo);
+}
+
+void MapPrivate::clearRendererData() {
+    const std::scoped_lock lock(m_mapRendererMutex);
+    if (!m_mapRenderer) {
+        return;
+    }
+    m_mapRenderer->clearData();
+    requestRendering();
 }
 
 void MapPrivate::requestRendering() {
